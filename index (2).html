@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Happy Birthday, my lovely girl</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: #05020a; overflow: hidden; overscroll-behavior: none;
+    font-family: system-ui, -apple-system, sans-serif; user-select: none; -webkit-user-select: none; }
+  canvas#stage { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: manipulation; }
+  #ov { position: fixed; inset: 0; background: #000; display: none; z-index: 10; }
+  #ov canvas { width: 100%; height: 100%; display: block; touch-action: manipulation; }
+  #x { position: absolute; top: max(14px, env(safe-area-inset-top)); right: 16px; z-index: 11; color: #ffd6ea;
+    font-size: 26px; line-height: 1; background: rgba(0,0,0,.35); border: 0; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; }
+  #hint { position: fixed; left: 0; right: 0; bottom: max(22px, env(safe-area-inset-bottom)); padding: 0 16px; text-align: center;
+    color: #ffd6ea; font: italic 16px Georgia, serif; text-shadow: 0 0 12px #ff3c8c; pointer-events: none; animation: bl 2.4s ease-in-out infinite; }
+  @keyframes bl { 50% { opacity: .5; } }
+</style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+  <div id="hint">Tap a glowing butterfly &#x1F98B; I left you 4 surprises</div>
+  <div id="ov"><canvas id="fx"></canvas><button id="x" aria-label="close">&#x2715;</button></div>
+  <script>
+(() => {
+  "use strict";
+  const TAU = Math.PI * 2, R = Math.random;
+  const HOT = [255, 55, 135], SOFT = [255, 145, 200], GOLD = [255, 205, 120], WP = [255, 228, 238];
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const canvas = document.getElementById("stage"), ctx = canvas.getContext("2d");
+  const layer = document.createElement("canvas"), lctx = layer.getContext("2d");
+  const small = document.createElement("canvas"), smctx = small.getContext("2d");
+  const glow = document.createElement("canvas"), gctx = glow.getContext("2d");
+  let W = 0, H = 0, D = 1, K = 1, SW = 1, SH = 1, bgGrad = null;
+  let ticks = 0, beat = 0, show = 1, phase = 0, vt = 0;   // phase: 0 play, 1 vanishing, 2 finale
+
+  function resize() {
+    W = innerWidth; H = innerHeight; D = Math.min(devicePixelRatio || 1, 2);
+    K = clamp(Math.min(W, H) / 520, 0.75, 1.3);
+    for (const [cv, cx] of [[canvas, ctx], [layer, lctx], [glow, gctx]]) {
+      cv.width = Math.round(W * D); cv.height = Math.round(H * D); cx.setTransform(D, 0, 0, D, 0, 0);
+    }
+    SW = Math.max(1, Math.floor(W / 5)); SH = Math.max(1, Math.floor(H / 5)); small.width = SW; small.height = SH;
+    bgGrad = ctx.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, Math.max(W, H) * 0.7);
+    bgGrad.addColorStop(0, "#2a0a2e"); bgGrad.addColorStop(0.5, "#14061f"); bgGrad.addColorStop(1, "#05020a");
+  }
+  resize(); addEventListener("resize", resize);
+
+  // ---------- butterfly ----------
+  function drawButterfly(c, x, y, size, phaseOff, color, angle) {
+    const flap = 0.25 + 0.75 * Math.abs(Math.sin(ticks * 0.18 + phaseOff)), S = size;
+    c.save(); c.translate(x, y); c.rotate(angle);
+    c.fillStyle = color; c.beginPath();
+    for (const side of [-1, 1]) {
+      const X = S * flap * side;
+      c.moveTo(0, -S * 0.05);
+      c.bezierCurveTo(X * 0.30, -S * 0.95, X * 1.05, -S * 1.30, X * 1.20, -S * 0.70);
+      c.bezierCurveTo(X * 1.28, -S * 0.25, X * 0.60, -S * 0.02, 0, S * 0.05);
+      c.moveTo(0, S * 0.05);
+      c.bezierCurveTo(X * 0.85, S * 0.05, X * 1.00, S * 0.65, X * 0.62, S * 0.95);
+      c.bezierCurveTo(X * 0.30, S * 1.10, X * 0.05, S * 0.55, 0, S * 0.05);
+    }
+    c.fill();
+    if (S >= 6) {
+      c.globalAlpha = 0.35; c.fillStyle = `rgb(${WP[0]},${WP[1]},${WP[2]})`; c.beginPath();
+      for (const side of [-1, 1]) {
+        const X = S * flap * side;
+        c.moveTo(X * 0.15, -S * 0.15);
+        c.bezierCurveTo(X * 0.35, -S * 0.65, X * 0.70, -S * 0.85, X * 0.80, -S * 0.55);
+        c.bezierCurveTo(X * 0.85, -S * 0.30, X * 0.45, -S * 0.12, X * 0.15, -S * 0.15);
+      }
+      c.fill(); c.globalAlpha = 1;
+    }
+    c.fillStyle = `rgb(${WP[0]},${WP[1]},${WP[2]})`; c.beginPath();
+    c.ellipse(0, 0, Math.max(0.6, S * 0.07), S * 0.42, 0, 0, TAU); c.fill();
+    if (S >= 8) {
+      c.strokeStyle = c.fillStyle; c.lineWidth = Math.max(0.8, S * 0.04); c.lineCap = "round"; c.beginPath();
+      c.moveTo(0, -S * 0.38); c.quadraticCurveTo(-S * 0.10, -S * 0.75, -S * 0.28, -S * 0.88);
+      c.moveTo(0, -S * 0.38); c.quadraticCurveTo(S * 0.10, -S * 0.75, S * 0.28, -S * 0.88);
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  // ---------- drifting butterflies (the big glowing ones are tappable) ----------
+  function newB(anywhere) {
+    const base = [5, 6, 7, 8, 9, 10, 34, 42, 50][(R() * 9) | 0];
+    return { x: R() * W, y: anywhere ? R() * H : H + 40, vx: R() - 0.5, vy: -0.3 - R() * 0.8,
+             s: base * K, big: base >= 30, p: R() * 6.28 };
+  }
+  const bfs = [];
+  for (let i = 0; i < 40; i++) bfs.push(newB(true));
+  function drawBfs(c) {
+    for (let i = bfs.length - 1; i >= 0; i--) {
+      const p = bfs[i];
+      let ang = 0;
+      if (phase === 1) {                       // glide gracefully to the sides, trailing sparkles and tiny hearts
+        if (!p.dir) { p.dir = p.x < W / 2 ? -1 : 1; p.delay = (R() * 60) | 0; p.vx = 0; }
+        if (vt > p.delay) {
+          p.vx = clamp(p.vx + p.dir * 0.1, -7, 7);
+          p.x += p.vx; p.y += Math.sin(ticks * 0.07 + p.p) * 1.1 - 0.35;
+          ang = p.dir * 0.55 * clamp(Math.abs(p.vx) / 5);
+          if (ticks % (p.big ? 3 : 9) === 0)
+            addSpark(p.x, p.y, -p.dir * 0.4 + (R() - 0.5) * 0.4, 0.2 + R() * 0.3, 45, R() < 0.5 ? 1 : 0,
+                     (2 + R() * 3) * K, R() < 0.5 ? SOFT : GOLD);
+        } else p.x += Math.sin(ticks * 0.03 + p.p) * 0.5;
+        if (p.x < -90 || p.x > W + 90) { bfs[i] = bfs[bfs.length - 1]; bfs.pop(); continue; }
+      } else {
+        p.x += p.vx + Math.sin(ticks * 0.03 + p.p) * 0.5; p.y += p.vy;
+        if (p.y < -60) Object.assign(p, newB(false));
+      }
+      const col = p.big ? WP : SOFT, f = p.big ? 0.8 + 0.2 * Math.sin(ticks * 0.08 + p.p) : 1;
+      drawButterfly(c, p.x, p.y, p.s, p.p, `rgb(${col[0] * f | 0},${col[1] * f | 0},${col[2] * f | 0})`, ang);
+    }
+  }
+
+  // ---------- petals ----------
+  function newPetal(anywhere) {
+    return { x: R() * W, y: anywhere ? R() * H : -30, vy: 0.5 + R() * 0.9, s: (5 + R() * 7) * K,
+             rot: R() * TAU, vr: (R() - 0.5) * 0.05, ph: R() * TAU, c: R() < 0.5 ? [255, 70, 120] : [255, 125, 165] };
+  }
+  const petals = [];
+  for (let i = 0; i < 24; i++) petals.push(newPetal(true));
+  function drawPetals(c) {
+    for (const p of petals) {
+      p.x += Math.sin(ticks * 0.015 + p.ph) * 0.8; p.y += p.vy; p.rot += p.vr;
+      if (p.y > H + 30) Object.assign(p, newPetal(false));
+      const s = p.s;
+      c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.scale(Math.cos(ticks * 0.03 + p.ph), 1);
+      c.fillStyle = `rgb(${p.c[0] * 0.8 | 0},${p.c[1] * 0.8 | 0},${p.c[2] * 0.8 | 0})`; c.beginPath();
+      c.moveTo(0, -s); c.bezierCurveTo(s * 0.9, -s * 0.6, s * 0.8, s * 0.6, 0, s);
+      c.bezierCurveTo(-s * 0.8, s * 0.6, -s * 0.9, -s * 0.6, 0, -s); c.fill(); c.restore();
+    }
+  }
+
+  // ---------- sparkles & little hearts ----------
+  const sparks = [];
+  function addSpark(x, y, vx, vy, life, type, size, col) {
+    if (sparks.length < 450) sparks.push({ x, y, vx, vy, life, max: life, type, size, col });
+  }
+  function burst(x, y, n) {
+    for (let i = 0; i < n; i++) {
+      const a = R() * TAU, sp = 1 + R() * 3.5, r = R();
+      addSpark(x, y, Math.cos(a) * sp, Math.sin(a) * sp, 50 + (R() * 40 | 0), R() < 0.35 ? 1 : 0,
+               (3 + R() * 6) * K, r < 0.3 ? GOLD : r < 0.6 ? SOFT : WP);
+    }
+  }
+  function drawSparks(c) {
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      s.x += s.vx; s.y += s.vy; s.vx *= 0.985; s.vy = s.vy * 0.985 - 0.012;
+      if (--s.life <= 0) { sparks[i] = sparks[sparks.length - 1]; sparks.pop(); continue; }
+      const a = s.life / s.max, r = s.size * (0.5 + 0.5 * a);
+      c.fillStyle = `rgb(${s.col[0] * a | 0},${s.col[1] * a | 0},${s.col[2] * a | 0})`; c.beginPath();
+      if (s.type === 0) {
+        c.moveTo(s.x, s.y - r); c.quadraticCurveTo(s.x, s.y, s.x + r, s.y); c.quadraticCurveTo(s.x, s.y, s.x, s.y + r);
+        c.quadraticCurveTo(s.x, s.y, s.x - r, s.y); c.quadraticCurveTo(s.x, s.y, s.x, s.y - r);
+      } else {
+        const h = r * 0.8;
+        c.moveTo(s.x, s.y + h * 0.9);
+        c.bezierCurveTo(s.x - h * 1.6, s.y - h * 0.1, s.x - h * 0.7, s.y - h * 1.2, s.x, s.y - h * 0.4);
+        c.bezierCurveTo(s.x + h * 0.7, s.y - h * 1.2, s.x + h * 1.6, s.y - h * 0.1, s.x, s.y + h * 0.9);
+      }
+      c.fill();
+    }
+  }
+
+  // ---------- caption & aura ----------
+  function drawCaption(c) {
+    if (show <= 0.02) return;
+    const f = Math.min(W * 0.12, 56);
+    c.save(); c.globalAlpha = show; c.translate(W / 2, H / 2 - f * 0.3); c.scale(1 + 0.03 * beat, 1 + 0.03 * beat);
+    c.textAlign = "center"; c.textBaseline = "middle"; c.shadowColor = "rgb(255,60,140)"; c.shadowBlur = 20;
+    c.fillStyle = "rgb(255,228,238)";
+    c.font = `italic 600 ${f}px Georgia, 'Times New Roman', serif`; c.fillText("Happy Birthday", 0, 0);
+    c.font = `italic 400 ${f * 0.72}px Georgia, 'Times New Roman', serif`; c.fillText("my lovely girl", 0, f);
+    c.fillStyle = "rgb(255,205,120)"; c.font = `${f * 0.55}px Georgia, serif`; c.fillText("\u2665", 0, f * 1.95);
+    c.restore();
+  }
+  function drawAura(c) {
+    if (show <= 0.01) return;
+    const g = c.createRadialGradient(W / 2, H / 2, 10, W / 2, H / 2, Math.min(W, H) * (0.75 + 0.04 * beat));
+    g.addColorStop(0, `rgba(255,70,150,${0.30 * show})`); g.addColorStop(0.6, `rgba(190,60,200,${0.12 * show})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    c.save(); c.globalCompositeOperation = "destination-over"; c.fillStyle = g; c.fillRect(0, 0, W, H); c.restore();
+  }
+
+  // ---------- ambient background ----------
+  const stars = Array.from({ length: 90 }, () => ({ x: R(), y: R(), r: R() * 1.6 + 0.4, ph: R() * TAU }));
+  const bokeh = Array.from({ length: 12 }, () => ({ x: R() * 800, y: R() * 800, r: 30 + R() * 60,
+    vx: (R() - 0.5) * 0.15, vy: -0.05 - R() * 0.15, c: R() < 0.5 ? [255, 90, 160] : [200, 110, 255] }));
+
+  // ---------- tap handling ----------
+  canvas.addEventListener("pointerdown", e => {
+    if (phase) return;
+    const x = e.clientX, y = e.clientY;
+    let hit = null, best = 1e9;
+    for (const p of bfs) {
+      if (!p.big) continue;
+      const d = Math.hypot(p.x - x, p.y - y);
+      if (d < p.s * 1.5 + 16 && d < best) { hit = p; best = d; }
+    }
+    if (hit) {
+      burst(hit.x, hit.y, 40);
+      Object.assign(hit, newB(false)); hit.big = true; hit.s = 42 * K;
+      if (window.playSurprise) window.playSurprise();
+    } else burst(x, y, 24);
+  });
+  window.endScene = () => { phase = 1; vt = 0; };
+
+  // ---------- update / render ----------
+  function update() {
+    ticks++;
+    const bp = (ticks % 70) / 70;
+    beat = Math.exp(-Math.pow((bp - 0.08) / 0.05, 2)) + 0.6 * Math.exp(-Math.pow((bp - 0.28) / 0.06, 2));
+    lctx.clearRect(0, 0, W, H);
+    if (phase === 1) {                       // butterflies glide away, caption softly fades, then black
+      vt++;
+      if (vt === 160) burst(W / 2, H / 2, 60);
+      show = clamp(1 - (vt - 130) / 100);
+      if (vt === 280) { phase = 2; if (window.startFinale) window.startFinale(); }
+    }
+    if (phase < 2 && ticks % (phase ? 6 : 14) === 0)
+      addSpark(R() * W, H + 10, (R() - 0.5) * 0.4, -1.2 - R() * 0.8, 520, 1, (3 + R() * 4) * K, R() < 0.5 ? SOFT : GOLD);
+    drawBfs(lctx); drawPetals(lctx); drawSparks(lctx); drawCaption(lctx); drawAura(lctx);
+  }
+  function render() {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = bgGrad; ctx.fillRect(0, 0, W, H);
+    for (const s of stars) {
+      ctx.fillStyle = `rgba(255,230,240,${0.2 + 0.35 * Math.sin(ticks * 0.03 + s.ph)})`;
+      ctx.fillRect(s.x * W, s.y * H, s.r, s.r);
+    }
+    ctx.globalCompositeOperation = "lighter";
+    for (const b of bokeh) {
+      b.x += b.vx; b.y += b.vy; const r = b.r * K;
+      if (b.y < -r) { b.y = H + r; b.x = R() * W; }
+      const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, r);
+      g.addColorStop(0, `rgba(${b.c[0]},${b.c[1]},${b.c[2]},0.10)`); g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g; ctx.fillRect(b.x - r, b.y - r, r * 2, r * 2);
+    }
+    ctx.globalCompositeOperation = "source-over";
+    smctx.clearRect(0, 0, SW, SH); smctx.drawImage(layer, 0, 0, SW, SH);
+    gctx.clearRect(0, 0, W, H); gctx.drawImage(small, 0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.drawImage(glow, 0, 0, W, H); ctx.drawImage(glow, 0, 0, W, H); ctx.drawImage(layer, 0, 0, W, H);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  let lastTime = 0, acc = 0;
+  const STEP = 1000 / 60;
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (window.__paused) { lastTime = 0; return; }
+    if (!lastTime) lastTime = now;
+    acc += Math.min(now - lastTime, 200); lastTime = now;
+    while (acc >= STEP) { update(); acc -= STEP; }
+    render();
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+
+<script>
+(() => {
+  const ov = document.getElementById("ov"), cv = document.getElementById("fx"),
+        c = cv.getContext("2d"), hint = document.getElementById("hint");
+  const TAU = Math.PI * 2, R = Math.random;
+  let w = 0, h = 0, u = 0, raf = 0, bag = [];
+  const heart = t => [16 * Math.sin(t) ** 3,
+    -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))];
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  function size() {
+    const d = Math.min(devicePixelRatio || 1, 2);
+    w = innerWidth; h = innerHeight; cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+    c.setTransform(d, 0, 0, d, 0, 0); u = Math.min(w, h);
+  }
+  function gold(s, y, a = 1) {
+    c.save(); c.globalAlpha = a; c.textAlign = "center"; c.fillStyle = "#ffe3a3";
+    c.font = `italic ${u * 0.045}px Georgia, serif`; c.shadowColor = "#ff3c8c"; c.shadowBlur = 14;
+    c.fillText(s, w / 2, y); c.restore();
+  }
+
+  // ===== Surprise 1: matrix rain, countdown, particle words -> particle heart =====
+  function matrix() {
+    const off = document.createElement("canvas"), o = off.getContext("2d");
+    off.width = w; off.height = h;
+    const N = 1600, P = [];
+    for (let i = 0; i < N; i++) P.push({ x: w / 2, y: h / 2, tx: w / 2, ty: h / 2 });
+    const drops = Array.from({ length: Math.ceil(w / 16) }, () => R() * h / 16);
+    const seq = ["3", "2", "1", "Happy", "Birthday", "My", "Lovely", "Girl", "END"];
+    let cur = -1;
+    function textPts(s, fs, cy) {
+      o.clearRect(0, 0, w, h); o.fillStyle = "#fff"; o.textAlign = "center"; o.textBaseline = "middle";
+      o.font = `bold ${fs}px Georgia, serif`; o.fillText(s, w / 2, cy);
+      const d = o.getImageData(0, 0, w, h).data, out = [];
+      for (let y = 0; y < h; y += 3) for (let x = 0; x < w; x += 3) if (d[(y * w + x) * 4 + 3] > 128) out.push([x, y]);
+      return out;
+    }
+    function aim(pts) {
+      P.forEach((p, i) => { const q = pts[i % pts.length]; p.tx = q[0] + (R() - .5) * 2; p.ty = q[1] + (R() - .5) * 2; });
+    }
+    function go(i) {
+      const s = seq[i];
+      if (s === "END") {
+        const pts = [];
+        for (let k = 0; k < 900; k++) { const [a, b] = heart(k / 900 * TAU); pts.push([w / 2 + a * u * .027, h / 2 + b * u * .027 - u * .02]); }
+        aim(pts.concat(textPts("Happy Birthday", u * .07, h / 2 - u * .05), textPts("my lovely girl", u * .06, h / 2 + u * .04)));
+      } else aim(textPts(s, Math.min(u * .3, u * 1.2 / s.length), h / 2));
+    }
+    return t => {
+      const i = Math.min(seq.length - 1, Math.floor(t));
+      if (i !== cur) { cur = i; go(i); }
+      c.fillStyle = "rgba(0,0,0,.3)"; c.fillRect(0, 0, w, h);
+      c.font = "14px monospace"; c.fillStyle = "rgba(255,60,150,.35)";
+      drops.forEach((d, k) => {
+        c.fillText(R() < .5 ? "0" : "1", k * 16, d * 16);
+        drops[k] = d * 16 > h && R() > .96 ? 0 : d + .5;
+      });
+      c.fillStyle = "rgb(255,160,230)";
+      for (const p of P) {
+        p.x += (p.tx - p.x) * .14 + (R() - .5) * .8; p.y += (p.ty - p.y) * .14 + (R() - .5) * .8;
+        c.fillRect(p.x, p.y, 2.6, 2.6);
+      }
+    };
+  }
+
+  // ===== Surprise 2: a lily that grows and blooms =====
+  function lily() {
+    const sp = Array.from({ length: 70 }, () => ({ x: R(), y: R(), p: R() * TAU }));
+    function petals(x, y, s, b, t) {
+      const L = u * .15 * s * b;
+      if (L < 2) return;
+      c.save(); c.translate(x, y);
+      for (let k = 0; k < 6; k++) {
+        c.save(); c.rotate(k * TAU / 6 + .3 * s);
+        const g = c.createLinearGradient(0, 0, L, 0);
+        g.addColorStop(0, "#ff7fb4"); g.addColorStop(.4, "#fff4f9"); g.addColorStop(1, "#ffd9ea");
+        c.fillStyle = g; c.beginPath(); c.moveTo(0, 0);
+        c.bezierCurveTo(L * .2, -L * .3, L * .75, -L * .27, L, 0);
+        c.bezierCurveTo(L * .75, L * .27, L * .2, L * .3, 0, 0); c.fill();
+        c.strokeStyle = "rgba(255,90,150,.55)"; c.lineWidth = Math.max(1, L * .02);
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(L * .8, 0); c.stroke();
+        c.fillStyle = "#d2306e";
+        for (let j = 0; j < 4; j++) { c.beginPath(); c.arc(L * (.15 + j * .09), (j % 2 ? 1 : -1) * L * .05, L * .018, 0, TAU); c.fill(); }
+        c.restore();
+      }
+      c.strokeStyle = "#e8b060"; c.fillStyle = "#8b3a1d"; c.lineWidth = 1.2;
+      for (let k = 0; k < 6; k++) {
+        const a = k * TAU / 6 + .5, l = L * (.5 + .08 * Math.sin(k * 2 + t));
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(Math.cos(a) * l, Math.sin(a) * l); c.stroke();
+        c.beginPath(); c.arc(Math.cos(a) * l, Math.sin(a) * l, Math.max(1.5, L * .035), 0, TAU); c.fill();
+      }
+      c.restore();
+    }
+    function bud(x, y, s, g) {
+      c.save(); c.translate(x, y); c.rotate(-.2); c.fillStyle = "#6fcf8a"; c.beginPath();
+      c.ellipse(0, -u * .03 * s * g, u * .018 * s * g, u * .045 * s * g, 0, 0, TAU); c.fill(); c.restore();
+    }
+    return t => {
+      c.fillStyle = "#02030a"; c.fillRect(0, 0, w, h);
+      const g = clamp(t / 10), cx = w / 2, base = h * .88, top = h * .38, sw = Math.sin(t * .8) * u * .01;
+      const sx = f => cx + Math.sin(f * 2.2) * u * .035 + sw * f, sy = f => base - (base - top) * f;
+      c.lineCap = "round"; c.strokeStyle = "#2f8f46"; c.lineWidth = u * .012;
+      c.beginPath(); c.moveTo(sx(0), sy(0));
+      for (let f = 0; f <= clamp(g / .4) + .001; f += .02) c.lineTo(sx(f), sy(f));
+      c.stroke();
+      [[.12, 1], [.25, -1], [.38, 1], [.5, -1]].forEach(([f, d]) => {
+        const lg = clamp((g - .1 - f * .5) / .2); if (lg <= 0) return;
+        const L = u * .16 * lg;
+        c.save(); c.translate(sx(f), sy(f)); c.rotate(d > 0 ? -.9 : Math.PI + .9);
+        c.fillStyle = "#1f7a3a"; c.beginPath(); c.moveTo(0, 0);
+        c.bezierCurveTo(L * .3, -L * .18, L * .7, -L * .15, L, 0);
+        c.bezierCurveTo(L * .7, L * .12, L * .3, L * .12, 0, 0); c.fill(); c.restore();
+      });
+      const fl = [[sx(1), sy(1), 1, .45], [sx(.7) - u * .15, sy(.7) - u * .05, .85, .6], [sx(.6) + u * .14, sy(.6) - u * .03, .8, .72]];
+      fl.forEach(([x, y, s, st], i) => {
+        const b = clamp((g - st) / .22) * (1 + .03 * Math.sin(t * 2 + i));
+        if (i && g > st - .2) {
+          const f = i === 1 ? .55 : .45;
+          c.strokeStyle = "#2f8f46"; c.lineWidth = u * .008; c.beginPath();
+          c.moveTo(sx(f), sy(f)); c.quadraticCurveTo(x, y + u * .06, x, y); c.stroke();
+        }
+        if (b < .3) bud(x, y, s, clamp((g - st + .15) / .2)); else petals(x, y, s, b, t);
+      });
+      c.fillStyle = "#fff";
+      sp.forEach(q => { c.globalAlpha = .5 + .5 * Math.sin(t * 2 + q.p); c.fillRect(q.x * w, q.y * h, 2, 2); });
+      c.globalAlpha = 1;
+      gold("Something beautiful, for my lovely girl", h * .1, clamp(t / 2));
+    };
+  }
+
+  // ===== Surprise 3: rotating 3D particle heart =====
+  function heart3d() {
+    const N = 2600;
+    const P = Array.from({ length: N }, () => {
+      const r = Math.sqrt(R()), [a, b] = heart(R() * TAU);
+      return [a * r, b * r, (R() - .5) * 8 * (1 - r * r * .7)];
+    });
+    const col = Array.from({ length: 8 }, (_, i) => `rgb(${90 + i * 23},${10 + i * 5},${25 + i * 6})`);
+    const xs = new Float32Array(N), ys = new Float32Array(N), bs = new Uint8Array(N);
+    return t => {
+      c.fillStyle = "#000"; c.fillRect(0, 0, w, h);
+      const th = t * .9, cs = Math.cos(th), sn = Math.sin(th);
+      const pu = 1 + .07 * Math.pow(Math.max(0, Math.sin(t * 5)), 3);
+      P.forEach((p, i) => {
+        const x = p[0] * cs - p[2] * sn, z = p[0] * sn + p[2] * cs, f = u * .024 * pu * (1 + z / 70);
+        xs[i] = w / 2 + x * f; ys[i] = h / 2 + p[1] * f - u * .02; bs[i] = (clamp((z + 16) / 32) * 7) | 0;
+      });
+      const sz = 1.4 + u / 450;
+      for (let k = 0; k < 8; k++) {
+        c.fillStyle = col[k]; c.beginPath();
+        for (let i = 0; i < N; i++) if (bs[i] === k) c.rect(xs[i], ys[i], sz + k * .15, sz + k * .15);
+        c.fill();
+      }
+      gold("Happy Birthday my lovely girl", h * .9, clamp(t - 1));
+    };
+  }
+
+  // ===== Surprise 4: glowing night garden (stems grow, buds burst into glowing flowers) =====
+  function garden() {
+    const pal = [[[255, 150, 40], [255, 235, 160]], [[255, 90, 160], [255, 215, 235]], [[255, 200, 80], [255, 250, 210]]];
+    const rgba = (a, al) => `rgba(${a[0]},${a[1]},${a[2]},${al})`;
+    const ease = v => 1 + 2.2 * Math.pow(v - 1, 3) + 1.2 * Math.pow(v - 1, 2);
+    const fl = Array.from({ length: 13 }, () => ({ d: R(), x: .08 + .84 * R(), bend: (R() - .5) * .25, ph: R() * TAU,
+        p: pal[R() < .5 ? 1 : (R() < .6 ? 0 : 2)] }))
+      .sort((a, b) => a.d - b.d).map((f, i) => ({ ...f, st: .3 + i * .5 }));
+    const ff = Array.from({ length: 40 }, () => ({ x: R(), y: R(), ph: R() * TAU, sp: .2 + R() * .5 }));
+    return t => {
+      const bg = c.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, "#02061a"); bg.addColorStop(.6, "#01030a"); bg.addColorStop(1, "#000");
+      c.globalCompositeOperation = "source-over"; c.fillStyle = bg; c.fillRect(0, 0, w, h); c.lineCap = "round";
+      fl.forEach(f => {
+        const g = clamp((t - f.st) / 2.2); if (g <= 0) return;
+        const sc = u * (.05 + .16 * f.d), bx = f.x * w, by = h * (.62 + .34 * f.d), hs = h * (.1 + .26 * f.d);
+        const sway = Math.sin(t * .9 + f.ph) * sc * .08, sg = clamp(g / .55), b = ease(clamp((g - .5) / .5));
+        const x1 = bx + f.bend * hs * 1.2, x2 = bx + f.bend * hs + sway;
+        const Q = s => [(1 - s) * (1 - s) * bx + 2 * (1 - s) * s * x1 + s * s * x2,
+                        (1 - s) * (1 - s) * by + 2 * (1 - s) * s * (by - hs * .55) + s * s * (by - hs)];
+        c.strokeStyle = "rgb(150,55,25)"; c.lineWidth = Math.max(1.5, sc * .09); c.beginPath(); c.moveTo(bx, by);
+        for (let s = .05; s <= sg + .001; s += .05) { const q = Q(s); c.lineTo(q[0], q[1]); }
+        c.stroke();
+        [[.22, 1], [.4, -1], [.58, 1], [.74, -1]].forEach(([s, d]) => {
+          const lg = clamp((sg - s) / .25); if (lg <= 0) return;
+          const q = Q(s), L = sc * 1.1 * lg;
+          c.save(); c.translate(q[0], q[1]); c.rotate(-Math.PI / 2 + d * .85 + f.bend);
+          c.fillStyle = "rgba(200,75,30,.85)"; c.beginPath(); c.moveTo(0, 0);
+          c.bezierCurveTo(L * .3, -L * .22, L * .7, -L * .18, L, 0); c.bezierCurveTo(L * .7, L * .14, L * .3, L * .14, 0, 0);
+          c.fill(); c.restore();
+        });
+        const T = Q(sg), tx = T[0], ty = T[1], col = f.p[0], mid = f.p[1];
+        c.globalCompositeOperation = "lighter";
+        if (b <= 0) {
+          const r = sc * .25 * sg, gr = c.createRadialGradient(tx, ty, 0, tx, ty, r + 1);
+          gr.addColorStop(0, rgba(mid, .9)); gr.addColorStop(1, rgba(col, 0)); c.fillStyle = gr;
+          c.fillRect(tx - r - 1, ty - r - 1, 2 * r + 2, 2 * r + 2);
+        } else {
+          const Lp = sc * b, pulse = 1 + .06 * Math.sin(t * 2.2 + f.ph);
+          let gr = c.createRadialGradient(tx, ty, 0, tx, ty, Lp * 2.4);
+          gr.addColorStop(0, rgba(col, .38 * Math.min(1, b))); gr.addColorStop(1, rgba(col, 0));
+          c.fillStyle = gr; c.fillRect(tx - Lp * 2.4, ty - Lp * 2.4, Lp * 4.8, Lp * 4.8);
+          c.save(); c.translate(tx, ty); c.rotate(t * .12 + f.ph);
+          for (let ring = 0; ring < 2; ring++) {
+            const Lr = Lp * (ring ? .62 : 1), off = ring ? TAU / 16 : 0;
+            c.fillStyle = rgba(ring ? mid : col, ring ? .8 : .85);
+            for (let k = 0; k < 8; k++) {
+              c.save(); c.rotate(k * TAU / 8 + off); c.beginPath(); c.moveTo(0, 0);
+              c.bezierCurveTo(Lr * .25, -Lr * .22, Lr * .8, -Lr * .12, Lr, 0);
+              c.bezierCurveTo(Lr * .8, Lr * .12, Lr * .25, Lr * .22, 0, 0); c.fill(); c.restore();
+            }
+          }
+          c.restore();
+          const rc = Lp * .5 * pulse; gr = c.createRadialGradient(tx, ty, 0, tx, ty, rc);
+          gr.addColorStop(0, "rgba(255,255,255,1)"); gr.addColorStop(.4, rgba(mid, .9)); gr.addColorStop(1, rgba(col, 0));
+          c.fillStyle = gr; c.beginPath(); c.arc(tx, ty, rc, 0, TAU); c.fill();
+        }
+        c.globalCompositeOperation = "source-over";
+      });
+      c.globalCompositeOperation = "lighter"; c.fillStyle = "#ffe9a0";
+      ff.forEach(q => {
+        c.globalAlpha = .15 + .85 * Math.max(0, Math.sin(t * 2 + q.ph));
+        c.fillRect((q.x + Math.sin(t * q.sp + q.ph) * .04) * w, ((((q.y - t * .01 * q.sp) % 1) + 1) % 1) * h, 2.5, 2.5);
+      });
+      c.globalAlpha = 1; c.globalCompositeOperation = "source-over";
+      gold("Glowing for you, my lovely girl", h * .1, clamp(t / 1.5));
+    };
+  }
+
+  // ===== Finale: black screen, fireworks spell "Happy Birthday My Love" word by word =====
+  let tap = null;
+  function finale() {
+    const off = document.createElement("canvas"), o = off.getContext("2d");
+    off.width = w; off.height = h;
+    const words = ["Happy", "Birthday", "My", "Love"], T0 = .8, GAP = 3.7, FLY = .9, FIN = T0 + words.length * GAP;
+    const pal = [[255, 90, 150], [255, 205, 120], [190, 120, 255], [120, 200, 255], [255, 255, 255]];
+    const wp = [[[255, 90, 150], [255, 170, 210], [255, 255, 255]], [[255, 205, 120], [255, 240, 190], [255, 160, 90]],
+                [[190, 120, 255], [255, 150, 230], [255, 255, 255]], [[255, 70, 110], [255, 150, 170], [255, 230, 235]]];
+    const P = [[], [], [], []], fired = [], sx = words.map(() => w * (.3 + .4 * R())), sp = [];
+    const cy = h * .42, sc = () => u / 500 + .4;
+    let last = 0, amb = 1.2, sz = 2, big = false;
+    function textPts(s, fs, y) {
+      o.clearRect(0, 0, w, h); o.fillStyle = "#fff"; o.textAlign = "center"; o.textBaseline = "middle";
+      o.font = `bold ${fs}px Georgia, serif`; o.fillText(s, w / 2, y);
+      const d = o.getImageData(0, 0, w, h).data, out = [], st = u > 600 ? 4 : 3;
+      for (let yy = 0; yy < h; yy += st) for (let xx = 0; xx < w; xx += st) if (d[(yy * w + xx) * 4 + 3] > 128) out.push([xx, yy]);
+      return out;
+    }
+    function burst(x, y, n, base, cols) {
+      for (let i = 0; i < n; i++) {
+        const a = R() * TAU, v = base * (.8 + .2 * R()), l = 55 + R() * 35;
+        sp.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, l, m: l, col: cols[i % cols.length] });
+      }
+    }
+    function explode(i) {
+      const pts = textPts(words[i], Math.min(u * .3, u * 1.5 / words[i].length), cy), n = Math.min(pts.length, 1100);
+      P[i] = Array.from({ length: n }, (_, j) => {
+        const q = pts[(j * pts.length / n) | 0], a = R() * TAU, v = (1 + R() * 7) * sc();
+        return { x: w / 2, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v, tx: q[0], ty: q[1], c: j % 3 };
+      });
+      burst(w / 2, cy, 60, 4 * sc(), wp[i]);
+    }
+    tap = (x, y) => burst(x, y, 70, 3.5 * sc(), [pal[(R() * 5) | 0], pal[(R() * 5) | 0]]);
+    return t => {
+      const dt = clamp((t - last) * 60, 0, 3); last = t;
+      c.globalCompositeOperation = "source-over"; c.fillStyle = "rgba(0,0,0,.25)"; c.fillRect(0, 0, w, h);
+      c.globalCompositeOperation = "lighter"; sz = Math.max(2, u / 220);
+      words.forEach((wd, i) => {
+        const tw = T0 + i * GAP, k = (t - tw) / FLY;
+        if (k >= 0 && k < 1) {                                  // rocket
+          const e = 1 - (1 - k) * (1 - k), x = sx[i] + (w / 2 - sx[i]) * e, y = h + 10 + (cy - h - 10) * e;
+          sp.push({ x, y, vx: (R() - .5) * .6, vy: .8 + R() * .6, l: 18, m: 18, col: [255, 200, 120] });
+          c.fillStyle = "#ffe9b0"; c.fillRect(x - 2, y - 2, 4, 4);
+        }
+        if (k >= 1 && !fired[i]) { fired[i] = 1; explode(i); }
+        if (!P[i].length) return;
+        const age = t - tw - FLY, f = clamp((age - 2.1) / .8);
+        if (f >= 1) { P[i] = []; return; }
+        for (const p of P[i]) {
+          if (age < .4) { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= Math.pow(.93, dt); p.vy *= Math.pow(.93, dt); }
+          else { p.x += (p.tx - p.x) * .09 * dt + (R() - .5) * .5; p.y += (p.ty - p.y) * .09 * dt + (R() - .5) * .5; }
+          if (f > 0) p.ty += f * 3 * dt;
+        }
+        for (let q = 0; q < 3; q++) {
+          const col = wp[i][q], b = 1 - f;
+          c.fillStyle = `rgb(${col[0] * b | 0},${col[1] * b | 0},${col[2] * b | 0})`; c.beginPath();
+          for (const p of P[i]) if (p.c === q && R() > .07) c.rect(p.x, p.y, sz, sz);
+          c.fill();
+        }
+      });
+      if (t > FIN && !big) {                                    // grand finale
+        big = true;
+        for (let k = 0; k < 6; k++) burst(w * (.15 + .7 * R()), h * (.15 + .6 * R()), 110, (3 + R() * 2) * sc(), [pal[k % 5], pal[(k + 2) % 5]]);
+      }
+      amb -= dt / 60;
+      if (amb <= 0 && t > .3) {
+        const fin = t > FIN; amb = fin ? .3 : 1.1;
+        const y = fin ? h * (.12 + .76 * R()) : (R() < .5 ? h * (.08 + .12 * R()) : h * (.78 + .12 * R()));
+        burst(w * (.12 + .76 * R()), y, fin ? 90 : 50, (2.6 + R() * 2) * sc(), [pal[(R() * 5) | 0], pal[(R() * 5) | 0]]);
+      }
+      for (let i = sp.length - 1; i >= 0; i--) {
+        const q = sp[i];
+        q.x += q.vx * dt; q.y += q.vy * dt; q.vy += .05 * dt; q.vx *= Math.pow(.985, dt); q.vy *= Math.pow(.985, dt); q.l -= dt;
+        if (q.l <= 0) { sp[i] = sp[sp.length - 1]; sp.pop(); continue; }
+        const b = q.l / q.m;
+        c.fillStyle = `rgb(${q.col[0] * b | 0},${q.col[1] * b | 0},${q.col[2] * b | 0})`; c.fillRect(q.x, q.y, sz, sz);
+      }
+      if (t > FIN + 1) {
+        c.globalCompositeOperation = "source-over";
+        c.save(); c.globalAlpha = clamp((t - FIN - 1) / 1.5); c.textAlign = "center"; c.textBaseline = "middle";
+        c.shadowColor = "#ff3c8c"; c.shadowBlur = 24; c.fillStyle = "#ffe3a3";
+        c.font = `italic 600 ${Math.min(u * .1, 64)}px Georgia, serif`;
+        c.fillText("Happy Birthday", w / 2, h * .45);
+        c.fillText("my love \u2665", w / 2, h * .45 + Math.min(u * .12, 78));
+        c.restore();
+      }
+    };
+  }
+
+  // ===== overlay control: 3 surprises, then the finale =====
+  let seen = 0, done = false;
+  const xb = document.getElementById("x");
+  cv.addEventListener("pointerdown", e => { if (tap) tap(e.clientX, e.clientY); });
+  function run(fn) {
+    const t0 = performance.now();
+    cancelAnimationFrame(raf);
+    (function loop(now) { raf = requestAnimationFrame(loop); fn((now - t0) / 1000); })(t0);
+  }
+  function open() {
+    if (done) return;
+    if (!bag.length) bag = [matrix, lily, heart3d, garden].sort(() => R() - .5);
+    seen++; tap = null; size(); window.__paused = true; hint.style.display = "none";
+    xb.style.display = ""; ov.style.transition = "none"; ov.style.opacity = 1; ov.style.display = "block";
+    run(bag.pop()());
+  }
+  function close() {
+    if (done) return;
+    cancelAnimationFrame(raf); ov.style.display = "none"; window.__paused = false;
+    if (seen >= 4) { if (window.endScene) window.endScene(); }
+    else { hint.innerHTML = `${seen} of 4 surprises found &#x2014; tap another butterfly &#x1F98B;`; hint.style.display = ""; }
+  }
+  xb.onclick = close;
+  addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  addEventListener("resize", () => { if (ov.style.display === "block") size(); });
+  window.startFinale = () => {
+    done = true; size(); window.__paused = true; xb.style.display = "none"; ov.style.transition = "none";
+    ov.style.opacity = 0; ov.style.display = "block"; void ov.offsetWidth;
+    ov.style.transition = "opacity 1.5s"; ov.style.opacity = 1;
+    run(finale());
+  };
+  window.playSurprise = open;
+})();
+</script>
+</body>
+</html>
